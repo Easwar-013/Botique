@@ -1,5 +1,5 @@
 import express from 'express';
-import cors from 'cors';
+import cors, { CorsOptions } from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 
@@ -35,12 +35,60 @@ console.log('======================================');
 // CORS
 // =====================================================
 
-app.use(
-  cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
-    credentials: true,
-  })
-);
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'https://boutique-bice.vercel.app',
+  process.env.CLIENT_URL,
+].filter((origin): origin is string => Boolean(origin));
+
+console.log('[CORS] Allowed origins:', allowedOrigins);
+
+const corsOptions: CorsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests that do not contain an Origin header.
+    // Useful for direct browser navigation, server-to-server requests,
+    // health checks, etc.
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.error(`[CORS] Blocked origin: ${origin}`);
+    return callback(new Error(`CORS blocked origin: ${origin}`));
+  },
+
+  credentials: true,
+
+  methods: [
+    'GET',
+    'HEAD',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'OPTIONS',
+  ],
+
+  allowedHeaders: [
+    'Origin',
+    'X-Requested-With',
+    'Content-Type',
+    'Accept',
+    'Authorization',
+  ],
+
+  optionsSuccessStatus: 204,
+};
+
+// Handle normal CORS requests
+app.use(cors(corsOptions));
+
+// Explicitly handle browser preflight requests
+app.options(/.*/, cors(corsOptions));
 
 // =====================================================
 // BODY PARSERS
@@ -103,6 +151,33 @@ app.use((_req, res) => {
     message: 'API route not found',
   });
 });
+
+// =====================================================
+// ERROR HANDLER
+// =====================================================
+
+app.use(
+  (
+    error: any,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction
+  ) => {
+    console.error('[Server Error]:', error);
+
+    if (error?.message?.startsWith('CORS blocked origin:')) {
+      return res.status(403).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+);
 
 // =====================================================
 // START SERVER
