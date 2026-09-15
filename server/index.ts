@@ -20,29 +20,25 @@ const app = express();
 
 const PORT = Number(process.env.PORT) || 5000;
 
+// CORS
 app.use(
   cors({
-    origin:
-      process.env.CLIENT_URL ||
-      'http://localhost:5173',
+    origin: process.env.CLIENT_URL || 'http://localhost:5173',
     credentials: true,
   })
 );
 
-
+// Body parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Static uploaded files
 app.use(
   '/uploads',
-  express.static(
-    path.join(
-      process.cwd(),
-      'uploads'
-    )
-  )
+  express.static(path.join(process.cwd(), 'uploads'))
 );
 
+// API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
@@ -52,28 +48,24 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/coupons', couponRoutes);
 
+// Health check
 app.get('/api/health', (_req, res) => {
   res.json({
     success: true,
-    message: 'BOUTIQUE API is running',
+    message: 'HangOver API is running',
   });
 });
 
+// Start server
 const startServer = async () => {
   try {
     await connectDB();
 
     app.listen(PORT, () => {
-      console.log(
-        `[Server] Running on http://localhost:${PORT}`
-      );
+      console.log(`[Server] Running on port ${PORT}`);
     });
   } catch (error) {
-    console.error(
-      '[Server] Failed to start:',
-      error
-    );
-
+    console.error('[Server] Failed to start:', error);
     process.exit(1);
   }
 };
