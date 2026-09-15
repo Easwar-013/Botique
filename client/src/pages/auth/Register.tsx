@@ -1,6 +1,4 @@
-import React, {
-  useState,
-} from 'react';
+import React, { useState } from 'react';
 
 import {
   Link,
@@ -14,8 +12,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 
 const Register: React.FC = () => {
-  const navigate =
-    useNavigate();
+  const navigate = useNavigate();
 
   const {
     register,
@@ -23,88 +20,75 @@ const Register: React.FC = () => {
     loading,
   } = useAuth();
 
-  const [name, setName] =
-    useState('');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
 
-  const [email, setEmail] =
-    useState('');
+  const [googleLoading, setGoogleLoading] =
+    useState(false);
 
-  const [phone, setPhone] =
-    useState('');
+  const handleSubmit = async (
+    e: React.FormEvent
+  ) => {
+    e.preventDefault();
 
-  const [password, setPassword] =
-    useState('');
+    try {
+      await register(
+        name,
+        email,
+        password,
+        phone
+      );
 
-  const [
-    googleLoading,
-    setGoogleLoading,
-  ] = useState(false);
+      // After successful registration,
+      // redirect user to the login page.
+      navigate('/login');
+    } catch (error: any) {
+      alert(
+        error?.response?.data?.message ||
+          'Registration failed'
+      );
+    }
+  };
 
-  const handleSubmit =
-    async (
-      e: React.FormEvent
-    ) => {
-      e.preventDefault();
+  const handleGoogleSuccess = async (
+    credential?: string
+  ) => {
+    if (!credential) {
+      alert(
+        'Google registration failed. No credential received.'
+      );
+      return;
+    }
 
-      try {
-        await register(
-          name,
-          email,
-          password,
-          phone
-        );
+    try {
+      setGoogleLoading(true);
 
-        navigate('/');
-      } catch (error: any) {
-        alert(
-          error?.response?.data
-            ?.message ||
-            'Registration failed'
-        );
-      }
-    };
+      await googleLogin(credential);
 
-  const handleGoogleSuccess =
-    async (
-      credential?: string
-    ) => {
-      if (!credential) {
-        alert(
-          'Google registration failed. No credential received.'
-        );
-        return;
-      }
+      // After successful Google registration,
+      // redirect user to the login page.
+      navigate('/login');
+    } catch (error: any) {
+      console.error(
+        'Google registration error:',
+        error
+      );
 
-      try {
-        setGoogleLoading(true);
-
-        await googleLogin(
-          credential
-        );
-
-        navigate('/');
-      } catch (error: any) {
-        console.error(
-          'Google registration error:',
-          error
-        );
-
-        alert(
-          error?.response?.data
-            ?.message ||
-            'Google registration failed'
-        );
-      } finally {
-        setGoogleLoading(false);
-      }
-    };
+      alert(
+        error?.response?.data?.message ||
+          'Google registration failed'
+      );
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   return (
     <div className="flex min-h-[80vh] items-center justify-center px-6">
       <form
-        onSubmit={
-          handleSubmit
-        }
+        onSubmit={handleSubmit}
         className="w-full max-w-md"
       >
         <p className="text-center text-xs uppercase tracking-[0.3em] text-gray-400">
@@ -116,15 +100,12 @@ const Register: React.FC = () => {
         </h1>
 
         <div className="mt-10 space-y-5">
-
           {/* Name */}
           <input
             placeholder="Full name"
             value={name}
             onChange={(e) =>
-              setName(
-                e.target.value
-              )
+              setName(e.target.value)
             }
             className="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none transition focus:border-black"
             required
@@ -136,9 +117,7 @@ const Register: React.FC = () => {
             placeholder="Email"
             value={email}
             onChange={(e) =>
-              setEmail(
-                e.target.value
-              )
+              setEmail(e.target.value)
             }
             className="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none transition focus:border-black"
             required
@@ -149,9 +128,7 @@ const Register: React.FC = () => {
             placeholder="Phone"
             value={phone}
             onChange={(e) =>
-              setPhone(
-                e.target.value
-              )
+              setPhone(e.target.value)
             }
             className="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none transition focus:border-black"
           />
@@ -162,9 +139,7 @@ const Register: React.FC = () => {
             placeholder="Password"
             value={password}
             onChange={(e) =>
-              setPassword(
-                e.target.value
-              )
+              setPassword(e.target.value)
             }
             className="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none transition focus:border-black"
             required
@@ -174,8 +149,7 @@ const Register: React.FC = () => {
           <button
             type="submit"
             disabled={
-              loading ||
-              googleLoading
+              loading || googleLoading
             }
             className="w-full rounded-xl bg-black py-3 text-white transition hover:bg-gray-800 disabled:opacity-50"
           >
@@ -198,9 +172,7 @@ const Register: React.FC = () => {
           {/* Google */}
           <div className="flex justify-center">
             <GoogleLogin
-              onSuccess={(
-                response
-              ) =>
+              onSuccess={(response) =>
                 handleGoogleSuccess(
                   response.credential
                 )
@@ -222,7 +194,6 @@ const Register: React.FC = () => {
               Creating your Google account...
             </p>
           )}
-
         </div>
 
         <p className="mt-6 text-center text-sm text-gray-500">
