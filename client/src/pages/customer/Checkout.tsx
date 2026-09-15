@@ -10,6 +10,8 @@ import {
   Loader2,
   MapPin,
   ShoppingBag,
+  Tag,
+  X,
 } from 'lucide-react';
 
 import {
@@ -55,6 +57,13 @@ interface PinCodeResponse {
   PostOffice: PinCodePostOffice[] | null;
 }
 
+interface AppliedCoupon {
+  code: string;
+  discountValue: number;
+  minimumPurchase?: number;
+  expiresAt?: string;
+}
+
 const Checkout: React.FC = () => {
   const navigate = useNavigate();
 
@@ -90,6 +99,28 @@ const Checkout: React.FC = () => {
   const [pincodeMessage, setPincodeMessage] =
     useState('');
 
+  /* =====================================================
+     COUPON
+  ===================================================== */
+
+  const [couponCode, setCouponCode] =
+    useState('');
+
+  const [couponApplying, setCouponApplying] =
+    useState(false);
+
+  const [couponMessage, setCouponMessage] =
+    useState('');
+
+  const [couponError, setCouponError] =
+    useState('');
+
+  const [appliedCoupon, setAppliedCoupon] =
+    useState<AppliedCoupon | null>(null);
+
+  const [couponDiscount, setCouponDiscount] =
+    useState(0);
+
   const [form, setForm] =
     useState<ShippingForm>({
       name: user?.name || '',
@@ -101,20 +132,25 @@ const Checkout: React.FC = () => {
       pincode: '',
     });
 
-  /*
-   * Require login.
-   */
+  /* =====================================================
+     REQUIRE LOGIN
+  ===================================================== */
+
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login', {
         replace: true,
       });
     }
-  }, [isAuthenticated, navigate]);
+  }, [
+    isAuthenticated,
+    navigate,
+  ]);
 
-  /*
-   * Keep logged-in user's information.
-   */
+  /* =====================================================
+     KEEP USER INFORMATION
+  ===================================================== */
+
   useEffect(() => {
     if (!user) {
       return;
@@ -122,17 +158,28 @@ const Checkout: React.FC = () => {
 
     setForm((current) => ({
       ...current,
-      name: current.name || user.name || '',
-      email: current.email || user.email || '',
-      phone: current.phone || user.phone || '',
+      name:
+        current.name ||
+        user.name ||
+        '',
+      email:
+        current.email ||
+        user.email ||
+        '',
+      phone:
+        current.phone ||
+        user.phone ||
+        '',
     }));
   }, [user]);
 
-  /*
-   * PIN code lookup.
-   */
+  /* =====================================================
+     PIN CODE LOOKUP
+  ===================================================== */
+
   useEffect(() => {
-    const pincode = form.pincode.trim();
+    const pincode =
+      form.pincode.trim();
 
     if (pincode.length !== 6) {
       setPincodeMessage('');
@@ -223,14 +270,18 @@ const Checkout: React.FC = () => {
     };
   }, [form.pincode]);
 
+  /* =====================================================
+     EMPTY CART
+  ===================================================== */
+
   if (!isAuthenticated) {
     return null;
   }
 
-  /*
-   * Empty cart.
-   */
-  if (cart.length === 0 && !success) {
+  if (
+    cart.length === 0 &&
+    !success
+  ) {
     return (
       <section className="flex min-h-[70vh] items-center justify-center px-6">
         <div className="max-w-md text-center">
@@ -265,20 +316,33 @@ const Checkout: React.FC = () => {
     );
   }
 
-  /*
-   * Always convert money values to numbers.
-   */
-  const safeSubtotal = Number(subtotal) || 0;
+  /* =====================================================
+     BASE TOTALS
+  ===================================================== */
 
-  const shipping: number =
-    safeSubtotal >= 999 ? 0 : 49;
+  const safeSubtotal =
+    Number(subtotal) || 0;
 
-  const total: number =
-    safeSubtotal + shipping;
+  const shipping =
+    safeSubtotal >= 999
+      ? 0
+      : 49;
 
-  /*
-   * Update form.
-   */
+  const finalTotal = Math.max(
+    0,
+    Number(
+      (
+        safeSubtotal -
+        couponDiscount +
+        shipping
+      ).toFixed(2)
+    )
+  );
+
+  /* =====================================================
+     UPDATE FORM
+  ===================================================== */
+
   const updateField = (
     field: keyof ShippingForm,
     value: string
@@ -291,9 +355,142 @@ const Checkout: React.FC = () => {
     setError('');
   };
 
-  /*
-   * Validate.
-   */
+  /* =====================================================
+     APPLY COUPON
+  ===================================================== */
+
+  const handleApplyCoupon = async () => {
+    const normalizedCode =
+      couponCode.trim().toUpperCase();
+
+    if (!normalizedCode) {
+      setCouponError(
+        'Please enter a coupon code.'
+      );
+      setCouponMessage('');
+      return;
+    }
+
+    if (safeSubtotal <= 0) {
+      setCouponError(
+        'Your order subtotal is invalid.'
+      );
+      return;
+    }
+
+    try {
+      setCouponApplying(true);
+      setCouponError('');
+      setCouponMessage('');
+
+      const response =
+        await api.post(
+          '/coupons/validate',
+          {
+            code: normalizedCode,
+            subtotal: safeSubtotal,
+          }
+        );
+
+      const coupon =
+        response.data?.coupon;
+
+      if (!coupon) {
+        throw new Error(
+          'Invalid coupon response.'
+        );
+      }
+
+      const discountValue =
+        Number(
+          coupon.discountValue
+        );
+
+      if (
+        !Number.isFinite(
+          discountValue
+        ) ||
+        discountValue <= 0
+      ) {
+        throw new Error(
+          'Invalid coupon discount.'
+        );
+      }
+
+      /*
+       * Admin currently creates
+       * percentage coupons.
+       */
+      const calculatedDiscount =
+        Math.min(
+          safeSubtotal,
+          Number(
+            (
+              safeSubtotal *
+              (discountValue / 100)
+            ).toFixed(2)
+          )
+        );
+
+      setAppliedCoupon({
+        code:
+          coupon.code ||
+          normalizedCode,
+        discountValue,
+        minimumPurchase:
+          coupon.minimumPurchase,
+        expiresAt:
+          coupon.expiresAt,
+      });
+
+      setCouponDiscount(
+        calculatedDiscount
+      );
+
+      setCouponCode(
+        coupon.code ||
+        normalizedCode
+      );
+
+      setCouponMessage(
+        `Coupon applied successfully. ${discountValue}% discount applied.`
+      );
+    } catch (couponRequestError: any) {
+      console.error(
+        'Apply coupon error:',
+        couponRequestError
+      );
+
+      setAppliedCoupon(null);
+      setCouponDiscount(0);
+
+      setCouponError(
+        couponRequestError?.response
+          ?.data?.message ||
+          couponRequestError?.message ||
+          'Invalid or expired coupon code.'
+      );
+    } finally {
+      setCouponApplying(false);
+    }
+  };
+
+  /* =====================================================
+     REMOVE COUPON
+  ===================================================== */
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponDiscount(0);
+    setCouponCode('');
+    setCouponMessage('');
+    setCouponError('');
+  };
+
+  /* =====================================================
+     VALIDATE FORM
+  ===================================================== */
+
   const validateForm = (): boolean => {
     if (!form.name.trim()) {
       setError(
@@ -351,15 +548,18 @@ const Checkout: React.FC = () => {
     return true;
   };
 
-  /*
-   * Place order.
-   */
+  /* =====================================================
+     PLACE ORDER
+  ===================================================== */
+
   const handlePlaceOrder = async () => {
     if (!validateForm()) {
       return;
     }
 
-    if (paymentMethod === 'online') {
+    if (
+      paymentMethod === 'online'
+    ) {
       setError(
         'Online payment is not connected yet. Please select Cash on Delivery.'
       );
@@ -371,46 +571,71 @@ const Checkout: React.FC = () => {
       setError('');
 
       /*
-       * Recalculate the cart subtotal
-       * directly from the cart.
-       *
-       * This prevents any stale/invalid
-       * subtotal value from reaching
-       * the backend.
+       * Recalculate subtotal
+       * directly from cart.
        */
-      const calculatedSubtotal = Number(
-        cart.reduce(
-          (sum, item) => {
-            const itemPrice = Number(
-              item.product.discountPrice ??
-                item.product.price
-            );
+      const calculatedSubtotal =
+        Number(
+          cart
+            .reduce(
+              (sum, item) => {
+                const itemPrice =
+                  Number(
+                    item.product
+                      .discountPrice ??
+                      item.product.price
+                  );
 
-            return (
-              sum +
-              itemPrice * item.quantity
-            );
-          },
-          0
-        ).toFixed(2)
-      );
+                return (
+                  sum +
+                  itemPrice *
+                    item.quantity
+                );
+              },
+              0
+            )
+            .toFixed(2)
+        );
 
-      const calculatedShipping: number =
+      const calculatedShipping =
         calculatedSubtotal >= 999
           ? 0
           : 49;
 
-      const calculatedTotal: number =
-        Number(
-          (
-            calculatedSubtotal +
-            calculatedShipping
-          ).toFixed(2)
+      /*
+       * Keep the currently applied
+       * percentage coupon synchronized
+       * with the actual cart subtotal.
+       */
+      let calculatedCouponDiscount =
+        0;
+
+      if (appliedCoupon) {
+        calculatedCouponDiscount =
+          Math.min(
+            calculatedSubtotal,
+            Number(
+              (
+                calculatedSubtotal *
+                (appliedCoupon.discountValue /
+                  100)
+              ).toFixed(2)
+            )
+          );
+      }
+
+      const calculatedTotal =
+        Math.max(
+          0,
+          Number(
+            (
+              calculatedSubtotal -
+              calculatedCouponDiscount +
+              calculatedShipping
+            ).toFixed(2)
+          )
         );
 
-      /*
-       * Make sure values are valid.
-       */
       if (
         !Number.isFinite(
           calculatedSubtotal
@@ -432,52 +657,70 @@ const Checkout: React.FC = () => {
               item.product.price
           );
 
-          const itemTotal = Number(
-            (
-              price * item.quantity
-            ).toFixed(2)
-          );
+          const itemTotal =
+            Number(
+              (
+                price *
+                item.quantity
+              ).toFixed(2)
+            );
 
           return {
-            product: item.product._id,
-            productId: item.product._id,
-            name: item.product.name,
-            quantity: item.quantity,
-            size: item.size,
+            product:
+              item.product._id,
+
+            productId:
+              item.product._id,
+
+            name:
+              item.product.name,
+
+            quantity:
+              item.quantity,
+
+            size:
+              item.size,
+
             color:
-              item.color || undefined,
+              item.color ||
+              undefined,
+
             price,
-            total: itemTotal,
+
+            total:
+              itemTotal,
           };
         });
 
       const shippingAddress = {
-        name: form.name.trim(),
+        name:
+          form.name
+            .trim(),
 
-        email: form.email
-          .trim()
-          .toLowerCase(),
+        email:
+          form.email
+            .trim()
+            .toLowerCase(),
 
-        phone: form.phone.trim(),
+        phone:
+          form.phone.trim(),
 
         address:
           form.address.trim(),
 
-        city: form.city.trim(),
+        city:
+          form.city.trim(),
 
-        state: form.state.trim(),
+        state:
+          form.state.trim(),
 
         pincode:
           form.pincode.trim(),
       };
 
-      /*
-       * Send both `total` and `totalAmount`
-       * for compatibility with the current
-       * order backend.
-       */
       const orderPayload = {
-        items: orderItems,
+        items:
+          orderItems,
 
         shippingAddress,
 
@@ -488,6 +731,19 @@ const Checkout: React.FC = () => {
 
         shipping:
           calculatedShipping,
+
+        /*
+         * Coupon discount.
+         */
+        discount:
+          calculatedCouponDiscount,
+
+        /*
+         * Coupon code.
+         */
+        couponCode:
+          appliedCoupon?.code ||
+          undefined,
 
         total:
           calculatedTotal,
@@ -543,9 +799,10 @@ const Checkout: React.FC = () => {
     }
   };
 
-  /*
-   * Success.
-   */
+  /* =====================================================
+     SUCCESS
+  ===================================================== */
+
   if (success) {
     return (
       <section className="flex min-h-[75vh] items-center justify-center px-6 py-16">
@@ -600,6 +857,10 @@ const Checkout: React.FC = () => {
     );
   }
 
+  /* =====================================================
+     PAGE
+  ===================================================== */
+
   return (
     <section className="mx-auto max-w-7xl px-6 py-10 lg:px-8 lg:py-14">
       <div className="mb-10">
@@ -632,8 +893,13 @@ const Checkout: React.FC = () => {
       )}
 
       <div className="grid gap-10 lg:grid-cols-[1fr_400px]">
-        {/* Left */}
+
+        {/* =================================================
+            LEFT
+        ================================================= */}
+
         <div className="space-y-8">
+
           {/* Delivery */}
           <div className="border border-gray-200 p-6 sm:p-8">
             <div className="flex items-center gap-3">
@@ -654,6 +920,7 @@ const Checkout: React.FC = () => {
             </div>
 
             <div className="mt-7 grid gap-5 sm:grid-cols-2">
+
               <div>
                 <label className="mb-2 block text-sm font-medium">
                   Full Name
@@ -917,8 +1184,12 @@ const Checkout: React.FC = () => {
           </div>
         </div>
 
-        {/* Right */}
+        {/* =================================================
+            RIGHT
+        ================================================= */}
+
         <div className="h-fit border border-gray-200 p-6 lg:sticky lg:top-28">
+
           <h2 className="text-lg font-medium">
             Order Summary
           </h2>
@@ -975,15 +1246,128 @@ const Checkout: React.FC = () => {
                   <p className="shrink-0 text-sm font-medium">
                     ₹
                     {(
-                      price * item.quantity
-                    ).toLocaleString('en-IN')}
+                      price *
+                      item.quantity
+                    ).toLocaleString(
+                      'en-IN'
+                    )}
                   </p>
                 </div>
               );
             })}
           </div>
 
+          {/* =================================================
+              COUPON
+          ================================================= */}
+
+          <div className="mt-7 border-t pt-6">
+
+            <div className="flex items-center gap-2">
+              <Tag
+                size={17}
+                className="text-gray-500"
+              />
+
+              <h3 className="text-sm font-medium">
+                Have a coupon?
+              </h3>
+            </div>
+
+            {!appliedCoupon ? (
+              <>
+                <div className="mt-3 flex gap-2">
+                  <input
+                    value={couponCode}
+                    onChange={(e) => {
+                      setCouponCode(
+                        e.target.value.toUpperCase()
+                      );
+
+                      setCouponError('');
+                      setCouponMessage('');
+                    }}
+                    onKeyDown={(e) => {
+                      if (
+                        e.key === 'Enter'
+                      ) {
+                        e.preventDefault();
+
+                        if (
+                          !couponApplying
+                        ) {
+                          handleApplyCoupon();
+                        }
+                      }
+                    }}
+                    placeholder="Enter coupon code"
+                    className="min-w-0 flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm uppercase outline-none transition focus:border-black"
+                    disabled={
+                      couponApplying
+                    }
+                  />
+
+                  <button
+                    type="button"
+                    onClick={
+                      handleApplyCoupon
+                    }
+                    disabled={
+                      couponApplying ||
+                      !couponCode.trim()
+                    }
+                    className="rounded-xl bg-black px-5 py-3 text-sm font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                  >
+                    {couponApplying
+                      ? 'Applying...'
+                      : 'Apply'}
+                  </button>
+                </div>
+
+                {couponError && (
+                  <p className="mt-2 text-xs text-red-500">
+                    {couponError}
+                  </p>
+                )}
+
+                {couponMessage && (
+                  <p className="mt-2 text-xs text-green-600">
+                    {couponMessage}
+                  </p>
+                )}
+              </>
+            ) : (
+              <div className="mt-3 flex items-center justify-between rounded-xl border border-green-200 bg-green-50 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-green-800">
+                    {appliedCoupon.code}
+                  </p>
+
+                  <p className="mt-1 text-xs text-green-600">
+                    {appliedCoupon.discountValue}% discount applied
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={
+                    handleRemoveCoupon
+                  }
+                  className="ml-3 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-green-700 transition hover:bg-green-100"
+                  aria-label="Remove coupon"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* =================================================
+              TOTALS
+          ================================================= */}
+
           <div className="mt-7 space-y-4 border-t pt-6">
+
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">
                 Subtotal
@@ -996,6 +1380,21 @@ const Checkout: React.FC = () => {
                 )}
               </span>
             </div>
+
+            {couponDiscount > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-green-600">
+                  Coupon Discount
+                </span>
+
+                <span className="font-medium text-green-600">
+                  -₹
+                  {couponDiscount.toLocaleString(
+                    'en-IN'
+                  )}
+                </span>
+              </div>
+            )}
 
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">
@@ -1018,7 +1417,7 @@ const Checkout: React.FC = () => {
 
               <span className="text-xl font-medium">
                 ₹
-                {total.toLocaleString(
+                {finalTotal.toLocaleString(
                   'en-IN'
                 )}
               </span>
@@ -1036,7 +1435,8 @@ const Checkout: React.FC = () => {
           >
             {placingOrder
               ? 'Placing Order...'
-              : paymentMethod === 'online'
+              : paymentMethod ===
+                'online'
                 ? 'Online Payment Unavailable'
                 : 'Place Order'}
           </button>

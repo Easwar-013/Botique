@@ -28,6 +28,7 @@ import {
 import { useCart } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
 import { useWishlist } from '../../context/WishlistContext';
+import { getImageUrl } from '../../utils/imageUrl';
 
 const categoryItems = [
   'Women',
@@ -166,11 +167,73 @@ const Navbar: React.FC = () => {
       : 0;
 
   /* =====================================================
-     USER
+     USER / PROFILE IMAGE
   ===================================================== */
 
-  const profileImage =
-    user?.avatar || null;
+  const rawProfileImage = (() => {
+    const currentUser =
+      user as any;
+
+    return (
+      currentUser?.avatar ??
+      currentUser?.picture ??
+      currentUser?.photoURL ??
+      currentUser?.image ??
+      null
+    );
+  })();
+
+  const profileImage = (() => {
+    if (
+      typeof rawProfileImage ===
+      'string'
+    ) {
+      const value =
+        rawProfileImage.trim();
+
+      return value
+        ? getImageUrl(value)
+        : null;
+    }
+
+    if (
+      rawProfileImage &&
+      typeof rawProfileImage ===
+        'object'
+    ) {
+      const imageObject =
+        rawProfileImage as Record<
+          string,
+          unknown
+        >;
+
+      const value =
+        imageObject.url ??
+        imageObject.secure_url ??
+        imageObject.src ??
+        imageObject.path;
+
+      if (
+        typeof value === 'string' &&
+        value.trim()
+      ) {
+        return getImageUrl(
+          value.trim()
+        );
+      }
+    }
+
+    return null;
+  })();
+
+  const [
+    profileImageFailed,
+    setProfileImageFailed,
+  ] = useState(false);
+
+  useEffect(() => {
+    setProfileImageFailed(false);
+  }, [profileImage]);
 
   const firstLetter =
     user?.name
@@ -471,7 +534,7 @@ const Navbar: React.FC = () => {
      *
      * Extra spaces are removed so the backend
      * receives clean keywords.
-    */
+     */
     const normalizedSearch =
       searchQuery
         .trim()
@@ -579,12 +642,6 @@ const Navbar: React.FC = () => {
 
           {/* =================================================
               DESKTOP NAVIGATION / SEARCH
-              
-              IMPORTANT:
-              The wrapper is vertically centered,
-              but the search panel itself is only
-              56px high so it stays completely
-              inside the 80px navbar.
           ================================================= */}
 
           <div className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 md:block">
@@ -660,7 +717,6 @@ const Navbar: React.FC = () => {
                   {/* Categories */}
 
                   <div className="relative">
-
                     <button
                       type="button"
                       onClick={() =>
@@ -753,7 +809,6 @@ const Navbar: React.FC = () => {
                         )}
                       </div>
                     </div>
-
                   </div>
 
                   {/* Sale */}
@@ -817,21 +872,14 @@ const Navbar: React.FC = () => {
                   }}
                   className="relative z-[100] w-[720px] max-w-[calc(100vw-260px)]"
                 >
-
-                  {/* =================================================
-                      SINGLE ROW SEARCH BAR
-                  ================================================= */}
+                  {/* Search bar */}
 
                   <div className="flex h-14 w-full items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 shadow-[0_18px_50px_rgba(0,0,0,0.12)]">
-
-                    {/* Search icon */}
 
                     <Search
                       size={19}
                       className="ml-2 shrink-0 text-gray-400"
                     />
-
-                    {/* Search input */}
 
                     <input
                       autoFocus
@@ -854,7 +902,6 @@ const Navbar: React.FC = () => {
                     {/* Category */}
 
                     <div className="relative shrink-0">
-
                       <button
                         type="button"
                         onClick={() => {
@@ -878,9 +925,7 @@ const Navbar: React.FC = () => {
                         </span>
 
                         <ChevronDown
-                          size={
-                            13
-                          }
+                          size={13}
                           className={`shrink-0 transition-transform ${
                             searchCategoryOpen
                               ? 'rotate-180'
@@ -963,13 +1008,11 @@ const Navbar: React.FC = () => {
                           </motion.div>
                         )}
                       </AnimatePresence>
-
                     </div>
 
                     {/* Sort */}
 
                     <div className="relative shrink-0">
-
                       <button
                         type="button"
                         onClick={() => {
@@ -993,9 +1036,7 @@ const Navbar: React.FC = () => {
                         </span>
 
                         <ChevronDown
-                          size={
-                            13
-                          }
+                          size={13}
                           className={`shrink-0 transition-transform ${
                             searchSortOpen
                               ? 'rotate-180'
@@ -1058,7 +1099,6 @@ const Navbar: React.FC = () => {
                           </motion.div>
                         )}
                       </AnimatePresence>
-
                     </div>
 
                     {/* Search button */}
@@ -1069,12 +1109,9 @@ const Navbar: React.FC = () => {
                     >
                       Search
                     </button>
-
                   </div>
-
                 </motion.form>
               )}
-
             </AnimatePresence>
           </div>
 
@@ -1186,11 +1223,30 @@ const Navbar: React.FC = () => {
               className="hidden items-center gap-2 rounded-full px-2 py-2 text-sm transition hover:bg-gray-100 sm:flex"
             >
               {user ? (
-                profileImage ? (
+                profileImage &&
+                !profileImageFailed ? (
                   <img
                     src={profileImage}
-                    alt={user.name}
+                    alt={
+                      user.name ||
+                      'Profile'
+                    }
                     className="h-8 w-8 rounded-full object-cover ring-1 ring-gray-200"
+                    onLoad={() =>
+                      setProfileImageFailed(
+                        false
+                      )
+                    }
+                    onError={() => {
+                      console.error(
+                        'Profile image failed to load:',
+                        profileImage
+                      );
+
+                      setProfileImageFailed(
+                        true
+                      );
+                    }}
                   />
                 ) : (
                   <span className="flex h-8 w-8 items-center justify-center rounded-full bg-black text-xs font-medium text-white">
@@ -1228,9 +1284,7 @@ const Navbar: React.FC = () => {
                 </span>
               )}
             </button>
-
           </div>
-
         </div>
       </header>
 
@@ -1423,7 +1477,6 @@ const Navbar: React.FC = () => {
                     ? 'My Account'
                     : 'Sign In'}
                 </button>
-
               </nav>
             </motion.div>
           )}
@@ -1459,7 +1512,6 @@ const Navbar: React.FC = () => {
             {/* Search */}
 
             <div className="flex h-14 items-center gap-3 px-4">
-
               <Search
                 size={19}
                 className="text-gray-400"
@@ -1499,7 +1551,6 @@ const Navbar: React.FC = () => {
             {/* Mobile filters */}
 
             <div className="flex flex-wrap gap-2 border-t border-gray-100 p-3">
-
               <select
                 value={
                   searchCategory
@@ -1556,7 +1607,6 @@ const Navbar: React.FC = () => {
                   )
                 )}
               </select>
-
             </div>
           </motion.form>
         )}
