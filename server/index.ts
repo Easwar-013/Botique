@@ -38,7 +38,7 @@ console.log('======================================');
 const allowedOrigins = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
-  'https://boutique-bice.vercel.app',
+  'https://botique-bice.vercel.app',
   process.env.CLIENT_URL,
 ].filter((origin): origin is string => Boolean(origin));
 
@@ -46,13 +46,12 @@ console.log('[CORS] Allowed origins:', allowedOrigins);
 
 const corsOptions: CorsOptions = {
   origin: (origin, callback) => {
-    // Allow requests that do not contain an Origin header.
-    // Useful for direct browser navigation, server-to-server requests,
-    // health checks, etc.
+    // Allow requests without an Origin header
     if (!origin) {
       return callback(null, true);
     }
 
+    // Allow approved origins
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
@@ -84,10 +83,10 @@ const corsOptions: CorsOptions = {
   optionsSuccessStatus: 204,
 };
 
-// Handle normal CORS requests
+// Normal CORS requests
 app.use(cors(corsOptions));
 
-// Explicitly handle browser preflight requests
+// Browser preflight requests
 app.options(/.*/, cors(corsOptions));
 
 // =====================================================
