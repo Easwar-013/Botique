@@ -20,7 +20,21 @@ const app = express();
 
 const PORT = Number(process.env.PORT) || 5000;
 
+// =====================================================
+// SERVER STARTUP LOG
+// =====================================================
+
+console.log('======================================');
+console.log('        HANGOVER SERVER STARTED       ');
+console.log('======================================');
+console.log('PORT:', process.env.PORT || '5000');
+console.log('CLIENT_URL:', process.env.CLIENT_URL || 'not set');
+console.log('======================================');
+
+// =====================================================
 // CORS
+// =====================================================
+
 app.use(
   cors({
     origin: process.env.CLIENT_URL || 'http://localhost:5173',
@@ -28,17 +42,37 @@ app.use(
   })
 );
 
-// Body parsers
+// =====================================================
+// BODY PARSERS
+// =====================================================
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Static uploaded files
+// =====================================================
+// STATIC UPLOADED FILES
+// =====================================================
+
 app.use(
   '/uploads',
   express.static(path.join(process.cwd(), 'uploads'))
 );
 
-// API routes
+// =====================================================
+// ROOT ROUTE
+// =====================================================
+
+app.get('/', (_req, res) => {
+  res.json({
+    success: true,
+    message: 'HangOver backend is running',
+  });
+});
+
+// =====================================================
+// API ROUTES
+// =====================================================
+
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
@@ -48,7 +82,10 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/coupons', couponRoutes);
 
-// Health check
+// =====================================================
+// HEALTH CHECK
+// =====================================================
+
 app.get('/api/health', (_req, res) => {
   res.json({
     success: true,
@@ -56,16 +93,37 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-// Start server
+// =====================================================
+// 404 HANDLER
+// =====================================================
+
+app.use((_req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'API route not found',
+  });
+});
+
+// =====================================================
+// START SERVER
+// =====================================================
+
 const startServer = async () => {
   try {
     await connectDB();
 
-    app.listen(PORT, () => {
-      console.log(`[Server] Running on port ${PORT}`);
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log('======================================');
+      console.log(`Server running on port ${PORT}`);
+      console.log(`Health: /api/health`);
+      console.log('======================================');
     });
   } catch (error) {
-    console.error('[Server] Failed to start:', error);
+    console.error('======================================');
+    console.error('[Server] Failed to start');
+    console.error(error);
+    console.error('======================================');
+
     process.exit(1);
   }
 };
