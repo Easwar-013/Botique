@@ -1,4 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 import {
   ArrowLeft,
@@ -9,6 +13,8 @@ import {
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
+
+import AnimatedDropdown from '../../components/ui/animated-dropdown';
 
 import api from '../../services/api';
 
@@ -119,34 +125,35 @@ const CreateProduct: React.FC = () => {
   /*
    * Calculate final price.
    */
-  const calculatedDiscountPrice = useMemo(() => {
-    const price = Number(form.price);
-    const percentage = Number(
-      form.discountPercentage
-    );
+  const calculatedDiscountPrice =
+    useMemo(() => {
+      const price = Number(form.price);
+      const percentage = Number(
+        form.discountPercentage
+      );
 
-    if (
-      !Number.isFinite(price) ||
-      price <= 0 ||
-      !Number.isFinite(percentage) ||
-      percentage <= 0
-    ) {
-      return price > 0 ? price : 0;
-    }
+      if (
+        !Number.isFinite(price) ||
+        price <= 0 ||
+        !Number.isFinite(percentage) ||
+        percentage <= 0
+      ) {
+        return price > 0 ? price : 0;
+      }
 
-    const discountAmount =
-      price * (percentage / 100);
+      const discountAmount =
+        price * (percentage / 100);
 
-    return Math.max(
-      0,
-      Number(
-        (price - discountAmount).toFixed(2)
-      )
-    );
-  }, [
-    form.price,
-    form.discountPercentage,
-  ]);
+      return Math.max(
+        0,
+        Number(
+          (price - discountAmount).toFixed(2)
+        )
+      );
+    }, [
+      form.price,
+      form.discountPercentage,
+    ]);
 
   /*
    * Image previews.
@@ -171,8 +178,7 @@ const CreateProduct: React.FC = () => {
   const handleChange = (
     e: React.ChangeEvent<
       HTMLInputElement |
-      HTMLTextAreaElement |
-      HTMLSelectElement
+      HTMLTextAreaElement
     >
   ) => {
     const { name, value } = e.target;
@@ -231,9 +237,7 @@ const CreateProduct: React.FC = () => {
     const validFiles =
       selectedFiles.filter((file) => {
         if (
-          !file.type.startsWith(
-            'image/'
-          )
+          !file.type.startsWith('image/')
         ) {
           alert(
             `${file.name} is not an image.`
@@ -693,41 +697,28 @@ const CreateProduct: React.FC = () => {
                   </div>
 
                   <div>
-                    <label
-                      htmlFor="category"
-                      className="mb-2 block text-sm font-medium text-gray-700"
-                    >
+                    <label className="mb-2 block text-sm font-medium text-gray-700">
                       Category
                     </label>
 
-                    <select
-                      id="category"
-                      name="category"
-                      value={
-                        form.category
-                      }
-                      onChange={
-                        handleChange
-                      }
-                      className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 outline-none transition focus:border-black"
-                    >
-                      {CATEGORIES.map(
-                        (
-                          category
-                        ) => (
-                          <option
-                            key={
-                              category
-                            }
-                            value={
-                              category
-                            }
-                          >
-                            {category}
-                          </option>
-                        )
+                    <AnimatedDropdown
+                      items={CATEGORIES.map(
+                        (category) => ({
+                          name: category,
+                          value: category,
+                        })
                       )}
-                    </select>
+                      value={form.category}
+                      onChange={(value) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          category: value,
+                        }))
+                      }
+                      text="Select Category"
+                      align="left"
+                      className="w-full [&>button]:w-full [&>button]:min-w-0"
+                    />
                   </div>
 
                   <div>
@@ -833,20 +824,22 @@ const CreateProduct: React.FC = () => {
                     {form.discountPercentage &&
                       Number(form.price) > 0 &&
                       calculatedDiscountPrice <
-                        Number(form.price) && (
-                      <p className="mt-2 text-xs text-gray-500">
-                        Final price:{' '}
-                        <span className="font-medium text-black">
-                          ₹
-                          {calculatedDiscountPrice.toLocaleString(
-                            'en-IN',
-                            {
-                              maximumFractionDigits: 2,
-                            }
-                          )}
-                        </span>
-                      </p>
-                    )}
+                        Number(
+                          form.price
+                        ) && (
+                        <p className="mt-2 text-xs text-gray-500">
+                          Final price:{' '}
+                          <span className="font-medium text-black">
+                            ₹
+                            {calculatedDiscountPrice.toLocaleString(
+                              'en-IN',
+                              {
+                                maximumFractionDigits: 2,
+                              }
+                            )}
+                          </span>
+                        </p>
+                      )}
                   </div>
 
                   {/* Stock */}
@@ -1090,15 +1083,13 @@ const CreateProduct: React.FC = () => {
                           <span
                             className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium ${
                               item.finalSize <=
-                              100 *
-                                1024
+                              100 * 1024
                                 ? 'bg-green-100 text-green-700'
                                 : 'bg-red-100 text-red-700'
                             }`}
                           >
                             {item.finalSize <=
-                            100 *
-                              1024
+                            100 * 1024
                               ? 'Ready'
                               : 'Too large'}
                           </span>
@@ -1123,8 +1114,7 @@ const CreateProduct: React.FC = () => {
                           <img
                             src={preview}
                             alt={`Product preview ${
-                              index +
-                              1
+                              index + 1
                             }`}
                             className="h-full w-full object-cover"
                           />

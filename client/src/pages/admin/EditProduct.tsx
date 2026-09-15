@@ -16,6 +16,8 @@ import {
   useParams,
 } from 'react-router-dom';
 
+import AnimatedDropdown from '../../components/ui/animated-dropdown';
+
 import api from '../../services/api';
 
 import type {
@@ -299,8 +301,7 @@ const EditProduct: React.FC = () => {
   const handleChange = (
     e: React.ChangeEvent<
       HTMLInputElement |
-      HTMLTextAreaElement |
-      HTMLSelectElement
+      HTMLTextAreaElement
     >
   ) => {
     const {
@@ -699,33 +700,24 @@ const EditProduct: React.FC = () => {
                     Category
                   </label>
 
-                  <select
-                    name="category"
-                    value={
-                      form.category
-                    }
-                    onChange={
-                      handleChange
-                    }
-                    className="w-full rounded-xl border bg-white px-4 py-3 outline-none focus:border-black"
-                  >
-                    {CATEGORIES.map(
-                      (
-                        category
-                      ) => (
-                        <option
-                          key={
-                            category
-                          }
-                          value={
-                            category
-                          }
-                        >
-                          {category}
-                        </option>
-                      )
+                  <AnimatedDropdown
+                    items={CATEGORIES.map(
+                      (category) => ({
+                        name: category,
+                        value: category,
+                      })
                     )}
-                  </select>
+                    value={form.category}
+                    onChange={(value) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        category: value,
+                      }))
+                    }
+                    text="Select Category"
+                    align="left"
+                    className="w-full [&>button]:w-full [&>button]:min-w-0"
+                  />
                 </div>
 
                 <div>
@@ -818,19 +810,19 @@ const EditProduct: React.FC = () => {
                       Number(
                         form.price
                       ) && (
-                    <p className="mt-2 text-xs text-gray-500">
-                      Final price:{' '}
-                      <span className="font-medium text-black">
-                        ₹
-                        {calculatedDiscountPrice.toLocaleString(
-                          'en-IN',
-                          {
-                            maximumFractionDigits: 2,
-                          }
-                        )}
-                      </span>
-                    </p>
-                  )}
+                      <p className="mt-2 text-xs text-gray-500">
+                        Final price:{' '}
+                        <span className="font-medium text-black">
+                          ₹
+                          {calculatedDiscountPrice.toLocaleString(
+                            'en-IN',
+                            {
+                              maximumFractionDigits: 2,
+                            }
+                          )}
+                        </span>
+                      </p>
+                    )}
                 </div>
 
                 {/* Stock */}
@@ -1008,9 +1000,7 @@ const EditProduct: React.FC = () => {
                                   .env
                                   .VITE_SERVER_URL ||
                                 'http://localhost:5000'
-                              }${
-                                image.url
-                              }`
+                              }${image.url}`
                         }
                         alt={`Product ${
                           index + 1
