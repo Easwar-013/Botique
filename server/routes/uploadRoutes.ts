@@ -2,6 +2,7 @@ import {
   Router,
   Request,
   Response,
+  NextFunction,
 } from 'express';
 
 import multer from 'multer';
@@ -15,7 +16,26 @@ import {
 
 const router = Router();
 
-const MAX_FILE_SIZE = 100 * 1024;
+/*
+ * =====================================================
+ * LIMITS
+ * =====================================================
+ *
+ * Frontend compresses images to <= 95 KB.
+ *
+ * The server accepts up to 20 MB so Multer can
+ * receive an original image if necessary.
+ *
+ * We still reject anything above 100 KB after
+ * the multipart upload reaches the route.
+ * =====================================================
+ */
+
+const MAX_UPLOAD_SIZE =
+  20 * 1024 * 1024;
+
+const MAX_STORED_SIZE =
+  100 * 1024;
 
 /*
  * =====================================================
@@ -48,10 +68,6 @@ const getGridFSBucket = () => {
 /*
  * =====================================================
  * MULTER MEMORY STORAGE
- *
- * Images are kept in memory temporarily,
- * then uploaded directly to MongoDB GridFS.
- * No local filesystem is used.
  * =====================================================
  */
 
@@ -63,7 +79,7 @@ const upload = multer({
 
   limits: {
     fileSize:
-      MAX_FILE_SIZE,
+      MAX_UPLOAD_SIZE,
   },
 
   fileFilter: (
@@ -125,7 +141,8 @@ const createFileName = (
       )
       .replace(
         /^-|-$/g,
-        '');
+        ''
+      );
 
   const finalExtension =
     extension
@@ -201,11 +218,6 @@ const uploadBufferToGridFS = (
 /*
  * =====================================================
  * POST /api/upload/image
- *
- * Admin only
- *
- * Stores the image directly in
- * MongoDB GridFS.
  * =====================================================
  */
 
@@ -213,15 +225,94 @@ router.post(
   '/image',
   protect,
   requireAdmin,
-  upload.single('image'),
+
+  /*
+   * Multer is handled through a callback so
+   * Multer errors are returned properly.
+   */
+  (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
+    upload.single(
+      'image'
+    )(
+      req,
+      res,
+      (error) => {
+        if (error) {
+          console.error(
+            'Multer upload error:',
+            error
+          );
+
+          if (
+            error instanceof
+            multer.MulterError
+          ) {
+            if (
+              error.code ===
+              'LIMIT_FILE_SIZE'
+            ) {
+              res.status(
+                400
+              ).json({
+                success: false,
+                message:
+                  'Image is too large. Please use an image under 20 MB.',
+              });
+
+              return;
+            }
+
+            res.status(
+              400
+            ).json({
+              success: false,
+              message:
+                error.message,
+            });
+
+            return;
+          }
+
+          res.status(
+            400
+          ).json({
+            success: false,
+            message:
+              error instanceof
+              Error
+                ? error.message
+                : 'Image upload failed.',
+          });
+
+          return;
+        }
+
+        next();
+      }
+    );
+  },
 
   async (
     req: Request,
     res: Response
   ): Promise<void> => {
     try {
+      /*
+       * Verify Multer actually received
+       * the image field.
+       */
       if (!req.file) {
-        res.status(400).json({
+        console.error(
+          'Upload request contained no image file.'
+        );
+
+        res.status(
+          400
+        ).json({
           success: false,
           message:
             'Please select an image.',
@@ -230,21 +321,44 @@ router.post(
         return;
       }
 
+      console.log(
+        '[Upload] Received:',
+        {
+          originalName:
+            req.file
+              .originalname,
+
+          mimetype:
+            req.file.mimetype,
+
+          size:
+            req.file.size,
+
+          fieldName:
+            req.file.fieldname,
+        }
+      );
+
+      /*
+       * Final storage safety check.
+       */
       if (
         req.file.size >
-        MAX_FILE_SIZE
+        MAX_STORED_SIZE
       ) {
-        res.status(400).json({
+        res.status(
+          400
+        ).json({
           success: false,
           message:
-            'Image must be 100 KB or smaller.',
+            'Image must be 100 KB or smaller after compression.',
         });
 
         return;
       }
 
       /*
-       * Generate a unique filename.
+       * Generate filename.
        */
       const filename =
         createFileName(
@@ -252,7 +366,7 @@ router.post(
         );
 
       /*
-       * Store image in GridFS.
+       * Store image in MongoDB GridFS.
        */
       await uploadBufferToGridFS(
         req.file.buffer,
@@ -262,15 +376,20 @@ router.post(
       );
 
       /*
-       * IMPORTANT:
-       *
-       * Keep the same URL structure
-       * your frontend already expects.
+       * Keep the URL structure used
+       * by the existing frontend.
        */
       const imageUrl =
         `/uploads/products/${filename}`;
 
-      res.status(200).json({
+      console.log(
+        '[Upload] Stored in MongoDB GridFS:',
+        imageUrl
+      );
+
+      res.status(
+        200
+      ).json({
         success: true,
 
         image: {
@@ -279,7 +398,8 @@ router.post(
           publicId:
             filename,
 
-          isPrimary: false,
+          isPrimary:
+            false,
         },
       });
     } catch (error) {
@@ -288,10 +408,13 @@ router.post(
         error
       );
 
-      res.status(500).json({
+      res.status(
+        500
+      ).json({
         success: false,
         message:
-          error instanceof Error
+          error instanceof
+          Error
             ? error.message
             : 'Image upload failed.',
       });
