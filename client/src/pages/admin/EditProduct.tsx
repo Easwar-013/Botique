@@ -24,6 +24,14 @@ import type {
   Product,
 } from '../../types';
 
+import {
+  compressImageIfNeeded,
+} from '../../utils/compressImage';
+
+import {
+  getImageUrl,
+} from '../../utils/imageUrl';
+
 interface FormState {
   name: string;
   description: string;
@@ -72,8 +80,15 @@ const CATEGORIES = [
   'Footwear',
 ];
 
+const MAX_INPUT_FILE_SIZE =
+  20 * 1024 * 1024;
+
+const MAX_UPLOAD_FILE_SIZE =
+  100 * 1024;
+
 const EditProduct: React.FC = () => {
   const { id } = useParams();
+
   const navigate = useNavigate();
 
   const [loading, setLoading] =
@@ -111,8 +126,11 @@ const EditProduct: React.FC = () => {
     useState<ExistingImage[]>([]);
 
   /*
-   * Calculate final price.
+   * =====================================================
+   * CALCULATE FINAL PRICE
+   * =====================================================
    */
+
   const calculatedDiscountPrice =
     useMemo(() => {
       const price = Number(
@@ -156,8 +174,11 @@ const EditProduct: React.FC = () => {
     ]);
 
   /*
-   * Load product.
+   * =====================================================
+   * LOAD PRODUCT
+   * =====================================================
    */
+
   const loadProduct = async () => {
     if (!id) {
       return;
@@ -172,7 +193,8 @@ const EditProduct: React.FC = () => {
         );
 
       const data =
-        response.data.product as Product;
+        response.data
+          .product as Product;
 
       setProduct(data);
 
@@ -213,7 +235,8 @@ const EditProduct: React.FC = () => {
           data.name || '',
 
         description:
-          data.description || '',
+          data.description ||
+          '',
 
         brand:
           data.brand || '',
@@ -296,8 +319,11 @@ const EditProduct: React.FC = () => {
   }, [id]);
 
   /*
-   * Form change.
+   * =====================================================
+   * FORM CHANGE
+   * =====================================================
    */
+
   const handleChange = (
     e: React.ChangeEvent<
       HTMLInputElement |
@@ -316,8 +342,11 @@ const EditProduct: React.FC = () => {
   };
 
   /*
-   * Size toggle.
+   * =====================================================
+   * SIZE TOGGLE
+   * =====================================================
    */
+
   const toggleSize = (
     size: string
   ) => {
@@ -328,76 +357,215 @@ const EditProduct: React.FC = () => {
               (item) =>
                 item !== size
             )
-          : [...prev, size]
+          : [
+              ...prev,
+              size,
+            ]
     );
   };
 
   /*
-   * Remove existing image.
+   * =====================================================
+   * REMOVE EXISTING IMAGE
+   * =====================================================
    */
+
   const removeImage = (
     index: number
   ) => {
     setImages((prev) =>
       prev.filter(
-        (_, i) => i !== index
+        (_item, i) =>
+          i !== index
       )
     );
   };
 
   /*
-   * Upload new images.
+   * =====================================================
+   * UPLOAD NEW IMAGES
+   *
+   * IMPORTANT:
+   * Images are compressed before being
+   * sent to the backend so GridFS/multer
+   * receives files <= 100 KB.
+   * =====================================================
    */
+
   const uploadNewImages = async (
     files: FileList
   ) => {
+    if (
+      files.length === 0
+    ) {
+      return;
+    }
+
     setUploading(true);
 
     try {
-      const fileArray =
+      const selectedFiles =
         Array.from(files);
 
-      const uploaded =
-        await Promise.all(
-          fileArray.map(
-            async (file) => {
-              const formData =
-                new FormData();
-
-              formData.append(
-                'image',
-                file
+      /*
+       * Validate original files first.
+       */
+      const validFiles =
+        selectedFiles.filter(
+          (file) => {
+            if (
+              !file.type.startsWith(
+                'image/'
+              )
+            ) {
+              alert(
+                `${file.name} is not an image.`
               );
 
-              const response =
-                await api.post(
-                  '/upload/image',
-                  formData,
-                  {
-                    headers: {
-                      'Content-Type':
-                        'multipart/form-data',
-                    },
-                  }
-                );
+              return false;
+            }
 
-              return response.data
-                .image as ExistingImage;
+            if (
+              file.size >
+              MAX_INPUT_FILE_SIZE
+            ) {
+              alert(
+                `${file.name} is larger than 20 MB.`
+              );
+
+              return false;
+            }
+
+            return true;
+          }
+        );
+
+      if (
+        validFiles.length === 0
+      ) {
+        return;
+      }
+
+      /*
+       * Compress all selected images.
+       */
+      const processedFiles =
+        await Promise.all(
+          validFiles.map(
+            async (file) => {
+              try {
+                const result =
+                  await compressImageIfNeeded(
+                    file
+                  );
+
+                /*
+                 * Backend accepts
+                 * maximum 100 KB.
+                 */
+                if (
+                  result.file.size >
+                  MAX_UPLOAD_FILE_SIZE
+                ) {
+                  throw new Error(
+                    `${file.name} could not be compressed below 100 KB.`
+                  );
+                }
+
+                return result.file;
+              } catch (error) {
+                throw new Error(
+                  error instanceof
+                  Error
+                    ? error.message
+                    : `Unable to process ${file.name}.`
+                );
+              }
             }
           )
         );
 
+      /*
+       * Upload compressed images
+       * one by one.
+       *
+       * This makes it easier to identify
+       * which image failed.
+       */
+      const uploaded: ExistingImage[] =
+        [];
+
+      for (
+        const file of
+          processedFiles
+      ) {
+        const formData =
+          new FormData();
+
+        formData.append(
+          'image',
+          file
+        );
+
+        try {
+          const response =
+            await api.post(
+              '/upload/image',
+              formData
+            );
+
+          if (
+            !response.data?.image
+          ) {
+            throw new Error(
+              'Server did not return image information.'
+            );
+          }
+
+          uploaded.push(
+            response.data
+              .image as ExistingImage
+          );
+        } catch (error: any) {
+          const backendMessage =
+            error?.response
+              ?.data?.message;
+
+          throw new Error(
+            backendMessage ||
+              error?.message ||
+              `Failed to upload ${file.name}.`
+          );
+        }
+      }
+
+      /*
+       * Add uploaded images to
+       * the existing product images.
+       */
       setImages((prev) => [
         ...prev,
         ...uploaded.map(
-          (image) => ({
+          (
+            image,
+            index
+          ) => ({
             ...image,
+
             isPrimary:
-              prev.length ===
-              0,
+              prev.length === 0 &&
+              index === 0,
           })
         ),
       ]);
+
+      alert(
+        `${uploaded.length} image${
+          uploaded.length === 1
+            ? ''
+            : 's'
+        } uploaded successfully.`
+      );
     } catch (error) {
       console.error(
         'Image upload error:',
@@ -405,7 +573,9 @@ const EditProduct: React.FC = () => {
       );
 
       alert(
-        'Failed to upload image.'
+        error instanceof Error
+          ? error.message
+          : 'Failed to upload image.'
       );
     } finally {
       setUploading(false);
@@ -413,8 +583,11 @@ const EditProduct: React.FC = () => {
   };
 
   /*
-   * Save product.
+   * =====================================================
+   * SAVE PRODUCT
+   * =====================================================
    */
+
   const handleSubmit = async (
     e: React.FormEvent<HTMLFormElement>
   ) => {
@@ -428,12 +601,12 @@ const EditProduct: React.FC = () => {
       alert(
         'Product name is required.'
       );
+
       return;
     }
 
-    const price = Number(
-      form.price
-    );
+    const price =
+      Number(form.price);
 
     const discountPercentage =
       Number(
@@ -447,6 +620,7 @@ const EditProduct: React.FC = () => {
       alert(
         'Please enter a valid price.'
       );
+
       return;
     }
 
@@ -456,13 +630,16 @@ const EditProduct: React.FC = () => {
         !Number.isFinite(
           discountPercentage
         ) ||
-        discountPercentage < 0 ||
-        discountPercentage > 100
+        discountPercentage <
+          0 ||
+        discountPercentage >
+          100
       )
     ) {
       alert(
         'Discount percentage must be between 0 and 100.'
       );
+
       return;
     }
 
@@ -472,6 +649,7 @@ const EditProduct: React.FC = () => {
       alert(
         'Stock cannot be negative.'
       );
+
       return;
     }
 
@@ -481,6 +659,7 @@ const EditProduct: React.FC = () => {
       alert(
         'Select at least one size.'
       );
+
       return;
     }
 
@@ -490,6 +669,7 @@ const EditProduct: React.FC = () => {
       alert(
         'At least one product image is required.'
       );
+
       return;
     }
 
@@ -499,16 +679,18 @@ const EditProduct: React.FC = () => {
       const colors =
         form.colors
           .split(',')
-          .map((color) =>
-            color.trim()
+          .map(
+            (color) =>
+              color.trim()
           )
           .filter(Boolean);
 
       const tags =
         form.tags
           .split(',')
-          .map((tag) =>
-            tag.trim()
+          .map(
+            (tag) =>
+              tag.trim()
           )
           .filter(Boolean);
 
@@ -516,7 +698,8 @@ const EditProduct: React.FC = () => {
         Number.isFinite(
           discountPercentage
         ) &&
-        discountPercentage > 0;
+        discountPercentage >
+          0;
 
       await api.put(
         `/products/${id}`,
@@ -537,8 +720,7 @@ const EditProduct: React.FC = () => {
 
           /*
            * Convert percentage
-           * back into database
-           * discountPrice.
+           * back into discountPrice.
            */
           discountPrice:
             hasDiscount
@@ -546,7 +728,9 @@ const EditProduct: React.FC = () => {
               : undefined,
 
           stock:
-            Number(form.stock),
+            Number(
+              form.stock
+            ),
 
           sizes:
             selectedSizes,
@@ -562,6 +746,7 @@ const EditProduct: React.FC = () => {
                 index
               ) => ({
                 ...image,
+
                 isPrimary:
                   index === 0,
               })
@@ -594,12 +779,19 @@ const EditProduct: React.FC = () => {
       alert(
         error?.response?.data
           ?.message ||
+          error?.message ||
           'Failed to update product.'
       );
     } finally {
       setSaving(false);
     }
   };
+
+  /*
+   * =====================================================
+   * LOADING
+   * =====================================================
+   */
 
   if (loading) {
     return (
@@ -616,12 +808,22 @@ const EditProduct: React.FC = () => {
     return null;
   }
 
+  /*
+   * =====================================================
+   * RETURN
+   * =====================================================
+   */
+
   return (
     <div className="min-h-screen bg-gray-50 p-6 lg:p-8">
       <div className="mx-auto max-w-6xl">
 
-        {/* Header */}
+        {/* =================================================
+            HEADER
+        ================================================= */}
+
         <div className="mb-8 flex items-center gap-4">
+
           <button
             type="button"
             onClick={() =>
@@ -644,83 +846,117 @@ const EditProduct: React.FC = () => {
               Edit Product
             </h1>
           </div>
+
         </div>
 
         <form
-          onSubmit={handleSubmit}
+          onSubmit={
+            handleSubmit
+          }
           className="grid gap-6 lg:grid-cols-[1fr_360px]"
         >
 
-          {/* ================================================= */}
-          {/* MAIN */}
-          {/* ================================================= */}
+          {/* =================================================
+              MAIN
+          ================================================= */}
+
           <div className="space-y-6">
 
             {/* Product Information */}
+
             <section className="rounded-2xl border bg-white p-6 shadow-sm">
+
               <h2 className="text-xl font-semibold">
                 Product Information
               </h2>
 
               <div className="mt-6 space-y-5">
 
+                {/* Product Name */}
+
                 <div>
+
                   <label className="mb-2 block text-sm font-medium">
                     Product Name
                   </label>
 
                   <input
                     name="name"
-                    value={form.name}
+                    value={
+                      form.name
+                    }
                     onChange={
                       handleChange
                     }
                     className="w-full rounded-xl border px-4 py-3 outline-none focus:border-black"
                     required
                   />
+
                 </div>
 
+                {/* Brand */}
+
                 <div>
+
                   <label className="mb-2 block text-sm font-medium">
                     Brand
                   </label>
 
                   <input
                     name="brand"
-                    value={form.brand}
+                    value={
+                      form.brand
+                    }
                     onChange={
                       handleChange
                     }
                     className="w-full rounded-xl border px-4 py-3 outline-none focus:border-black"
                   />
+
                 </div>
 
+                {/* Category */}
+
                 <div>
+
                   <label className="mb-2 block text-sm font-medium">
                     Category
                   </label>
 
                   <AnimatedDropdown
                     items={CATEGORIES.map(
-                      (category) => ({
+                      (
+                        category
+                      ) => ({
                         name: category,
                         value: category,
                       })
                     )}
-                    value={form.category}
-                    onChange={(value) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        category: value,
-                      }))
+                    value={
+                      form.category
+                    }
+                    onChange={(
+                      value
+                    ) =>
+                      setForm(
+                        (prev) => ({
+                          ...prev,
+                          category:
+                            value,
+                        })
+                      )
                     }
                     text="Select Category"
                     align="left"
                     className="w-full [&>button]:w-full [&>button]:min-w-0"
                   />
+
                 </div>
 
+                {/* Description */}
+
                 <div>
+
                   <label className="mb-2 block text-sm font-medium">
                     Description
                   </label>
@@ -736,12 +972,17 @@ const EditProduct: React.FC = () => {
                     }
                     className="w-full resize-none rounded-xl border px-4 py-3 outline-none focus:border-black"
                   />
+
                 </div>
+
               </div>
+
             </section>
 
             {/* Pricing */}
+
             <section className="rounded-2xl border bg-white p-6 shadow-sm">
+
               <h2 className="text-xl font-semibold">
                 Pricing & Inventory
               </h2>
@@ -749,7 +990,9 @@ const EditProduct: React.FC = () => {
               <div className="mt-6 grid gap-5 sm:grid-cols-3">
 
                 {/* Price */}
+
                 <div>
+
                   <label
                     htmlFor="price"
                     className="mb-2 block text-sm font-medium"
@@ -763,7 +1006,9 @@ const EditProduct: React.FC = () => {
                     type="number"
                     min="0"
                     step="0.01"
-                    value={form.price}
+                    value={
+                      form.price
+                    }
                     onChange={
                       handleChange
                     }
@@ -771,10 +1016,13 @@ const EditProduct: React.FC = () => {
                     className="w-full rounded-xl border px-4 py-3 outline-none focus:border-black"
                     required
                   />
+
                 </div>
 
                 {/* Discount percentage */}
+
                 <div>
+
                   <label
                     htmlFor="discountPercentage"
                     className="mb-2 block text-sm font-medium"
@@ -783,6 +1031,7 @@ const EditProduct: React.FC = () => {
                   </label>
 
                   <div className="relative">
+
                     <input
                       id="discountPercentage"
                       name="discountPercentage"
@@ -803,6 +1052,7 @@ const EditProduct: React.FC = () => {
                     <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">
                       %
                     </span>
+
                   </div>
 
                   {form.discountPercentage &&
@@ -823,10 +1073,13 @@ const EditProduct: React.FC = () => {
                         </span>
                       </p>
                     )}
+
                 </div>
 
                 {/* Stock */}
+
                 <div>
+
                   <label
                     htmlFor="stock"
                     className="mb-2 block text-sm font-medium"
@@ -849,17 +1102,23 @@ const EditProduct: React.FC = () => {
                     className="w-full rounded-xl border px-4 py-3 outline-none focus:border-black"
                     required
                   />
+
                 </div>
+
               </div>
+
             </section>
 
             {/* Sizes */}
+
             <section className="rounded-2xl border bg-white p-6 shadow-sm">
+
               <h2 className="text-xl font-semibold">
                 Sizes
               </h2>
 
               <div className="mt-5 flex flex-wrap gap-3">
+
                 {SIZES.map(
                   (size) => {
                     const selected =
@@ -887,56 +1146,79 @@ const EditProduct: React.FC = () => {
                     );
                   }
                 )}
+
               </div>
+
             </section>
 
             {/* Colors */}
+
             <section className="rounded-2xl border bg-white p-6 shadow-sm">
+
               <h2 className="text-xl font-semibold">
                 Colors
               </h2>
 
               <input
                 name="colors"
-                value={form.colors}
+                value={
+                  form.colors
+                }
                 onChange={
                   handleChange
                 }
                 placeholder="Black, White, Navy Blue"
                 className="mt-5 w-full rounded-xl border px-4 py-3 outline-none focus:border-black"
               />
+
             </section>
 
             {/* Tags */}
+
             <section className="rounded-2xl border bg-white p-6 shadow-sm">
+
               <h2 className="text-xl font-semibold">
                 Tags
               </h2>
 
               <input
                 name="tags"
-                value={form.tags}
+                value={
+                  form.tags
+                }
                 onChange={
                   handleChange
                 }
                 placeholder="summer, new, trending"
                 className="mt-5 w-full rounded-xl border px-4 py-3 outline-none focus:border-black"
               />
+
             </section>
+
           </div>
 
-          {/* ================================================= */}
-          {/* SIDEBAR */}
-          {/* ================================================= */}
+          {/* =================================================
+              SIDEBAR
+          ================================================= */}
+
           <div className="space-y-6">
 
             {/* Images */}
+
             <section className="rounded-2xl border bg-white p-6 shadow-sm">
+
               <h2 className="text-xl font-semibold">
                 Product Images
               </h2>
 
+              <p className="mt-1 text-xs leading-5 text-gray-400">
+                Images are automatically
+                compressed to 100 KB or less
+                before upload.
+              </p>
+
               <label className="mt-5 flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-7 text-center transition hover:border-black hover:bg-gray-50">
+
                 {uploading ? (
                   <Loader2
                     size={30}
@@ -949,11 +1231,17 @@ const EditProduct: React.FC = () => {
                 )}
 
                 <p className="mt-3 text-sm font-medium">
-                  Add more images
+                  {uploading
+                    ? 'Compressing & uploading...'
+                    : 'Add more images'}
                 </p>
 
                 <p className="mt-1 text-xs text-gray-400">
                   JPG, PNG or WEBP
+                </p>
+
+                <p className="mt-1 text-xs text-gray-400">
+                  Maximum 20 MB per selected image
                 </p>
 
                 <input
@@ -971,12 +1259,17 @@ const EditProduct: React.FC = () => {
                         e.target.files
                       );
                     }
+
+                    e.target.value =
+                      '';
                   }}
                   className="hidden"
                 />
+
               </label>
 
               <div className="mt-5 grid grid-cols-2 gap-3">
+
                 {images.map(
                   (
                     image,
@@ -989,23 +1282,28 @@ const EditProduct: React.FC = () => {
                       }
                       className="group relative aspect-square overflow-hidden rounded-xl bg-gray-100"
                     >
+
                       <img
-                        src={
-                          image.url.startsWith(
-                            'http'
-                          )
-                            ? image.url
-                            : `${
-                                import.meta
-                                  .env
-                                  .VITE_SERVER_URL ||
-                                'http://localhost:5000'
-                              }${image.url}`
-                        }
+                        src={getImageUrl(
+                          image.url
+                        )}
                         alt={`Product ${
                           index + 1
                         }`}
                         className="h-full w-full object-cover"
+                        onError={(
+                          event
+                        ) => {
+                          console.error(
+                            'Image failed to load:',
+                            getImageUrl(
+                              image.url
+                            )
+                          );
+
+                          event.currentTarget.style.opacity =
+                            '0.3';
+                        }}
                       />
 
                       {index ===
@@ -1029,14 +1327,19 @@ const EditProduct: React.FC = () => {
                           size={15}
                         />
                       </button>
+
                     </div>
                   )
                 )}
+
               </div>
+
             </section>
 
             {/* Status */}
+
             <section className="rounded-2xl border bg-white p-6 shadow-sm">
+
               <h2 className="text-xl font-semibold">
                 Status
               </h2>
@@ -1044,6 +1347,7 @@ const EditProduct: React.FC = () => {
               <div className="mt-5 space-y-4">
 
                 <label className="flex cursor-pointer justify-between">
+
                   <span>
                     New Arrival
                   </span>
@@ -1064,9 +1368,11 @@ const EditProduct: React.FC = () => {
                     }
                     className="h-5 w-5 accent-black"
                   />
+
                 </label>
 
                 <label className="flex cursor-pointer justify-between">
+
                   <span>
                     Featured
                   </span>
@@ -1087,9 +1393,11 @@ const EditProduct: React.FC = () => {
                     }
                     className="h-5 w-5 accent-black"
                   />
+
                 </label>
 
                 <label className="flex cursor-pointer justify-between">
+
                   <span>
                     Active
                   </span>
@@ -1110,12 +1418,17 @@ const EditProduct: React.FC = () => {
                     }
                     className="h-5 w-5 accent-black"
                   />
+
                 </label>
+
               </div>
+
             </section>
 
             {/* Actions */}
+
             <section className="rounded-2xl border bg-white p-6">
+
               <button
                 type="button"
                 onClick={() =>
@@ -1130,9 +1443,13 @@ const EditProduct: React.FC = () => {
 
               <button
                 type="submit"
-                disabled={saving}
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-black py-3 text-white transition hover:bg-gray-800 disabled:opacity-50"
+                disabled={
+                  saving ||
+                  uploading
+                }
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-black py-3 text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
+
                 {saving && (
                   <Loader2
                     size={17}
@@ -1142,11 +1459,18 @@ const EditProduct: React.FC = () => {
 
                 {saving
                   ? 'Saving...'
-                  : 'Save Changes'}
+                  : uploading
+                    ? 'Uploading...'
+                    : 'Save Changes'}
+
               </button>
+
             </section>
+
           </div>
+
         </form>
+
       </div>
     </div>
   );
