@@ -1,7 +1,8 @@
 import express from 'express';
-import cors, { CorsOptions } from 'cors';
+import cors, {
+  CorsOptions,
+} from 'cors';
 import dotenv from 'dotenv';
-import path from 'path';
 
 import { connectDB } from './config/db';
 
@@ -10,6 +11,7 @@ import productRoutes from './routes/productRoutes';
 import orderRoutes from './routes/orderRoutes';
 import analyticsRoutes from './routes/analyticsRoutes';
 import uploadRoutes from './routes/uploadRoutes';
+import imageRoutes from './routes/imageRoutes';
 import customerRoutes from './routes/customerRoutes';
 import reviewRoutes from './routes/reviewRoutes';
 import couponRoutes from './routes/couponRoutes';
@@ -18,18 +20,44 @@ dotenv.config();
 
 const app = express();
 
-const PORT = Number(process.env.PORT) || 5000;
+const PORT =
+  Number(process.env.PORT) ||
+  5000;
 
 // =====================================================
 // SERVER STARTUP LOG
 // =====================================================
 
-console.log('======================================');
-console.log('        HANGOVER SERVER STARTED       ');
-console.log('======================================');
-console.log('PORT:', process.env.PORT || '5000');
-console.log('CLIENT_URL:', process.env.CLIENT_URL || 'not set');
-console.log('======================================');
+console.log(
+  '======================================'
+);
+
+console.log(
+  '        HANGOVER SERVER STARTED       '
+);
+
+console.log(
+  '======================================'
+);
+
+console.log(
+  'PORT:',
+  process.env.PORT || '5000'
+);
+
+console.log(
+  'CLIENT_URL:',
+  process.env.CLIENT_URL ||
+    'not set'
+);
+
+console.log(
+  'IMAGE STORAGE: MongoDB GridFS'
+);
+
+console.log(
+  '======================================'
+);
 
 // =====================================================
 // CORS
@@ -39,25 +67,59 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'https://botique-bice.vercel.app',
+  'https://boutique-bice.vercel.app',
   process.env.CLIENT_URL,
-].filter((origin): origin is string => Boolean(origin));
+].filter(
+  (
+    origin
+  ): origin is string =>
+    Boolean(origin)
+);
 
-console.log('[CORS] Allowed origins:', allowedOrigins);
+console.log(
+  '[CORS] Allowed origins:',
+  allowedOrigins
+);
 
 const corsOptions: CorsOptions = {
-  origin: (origin, callback) => {
-    // Allow requests without an Origin header
+  origin: (
+    origin,
+    callback
+  ) => {
+    /*
+     * Allow requests without
+     * an Origin header.
+     */
     if (!origin) {
-      return callback(null, true);
+      return callback(
+        null,
+        true
+      );
     }
 
-    // Allow approved origins
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
+    /*
+     * Allow approved origins.
+     */
+    if (
+      allowedOrigins.includes(
+        origin
+      )
+    ) {
+      return callback(
+        null,
+        true
+      );
     }
 
-    console.error(`[CORS] Blocked origin: ${origin}`);
-    return callback(new Error(`CORS blocked origin: ${origin}`));
+    console.error(
+      `[CORS] Blocked origin: ${origin}`
+    );
+
+    return callback(
+      new Error(
+        `CORS blocked origin: ${origin}`
+      )
+    );
   },
 
   credentials: true,
@@ -84,72 +146,129 @@ const corsOptions: CorsOptions = {
 };
 
 // Normal CORS requests
-app.use(cors(corsOptions));
+app.use(
+  cors(corsOptions)
+);
 
 // Browser preflight requests
-app.options(/.*/, cors(corsOptions));
+app.options(
+  /.*/,
+  cors(corsOptions)
+);
 
 // =====================================================
 // BODY PARSERS
 // =====================================================
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// =====================================================
-// STATIC UPLOADED FILES
-// =====================================================
+app.use(
+  express.json()
+);
 
 app.use(
-  '/uploads',
-  express.static(path.join(process.cwd(), 'uploads'))
+  express.urlencoded({
+    extended: true,
+  })
 );
 
 // =====================================================
 // ROOT ROUTE
 // =====================================================
 
-app.get('/', (_req, res) => {
-  res.json({
-    success: true,
-    message: 'HangOver backend is running',
-  });
-});
+app.get(
+  '/',
+  (_req, res) => {
+    res.json({
+      success: true,
+      message:
+        'HangOver backend is running',
+    });
+  }
+);
+
+// =====================================================
+// GRIDFS IMAGE ROUTES
+// =====================================================
+
+app.use(
+  '/uploads',
+  imageRoutes
+);
 
 // =====================================================
 // API ROUTES
 // =====================================================
 
-app.use('/api/auth', authRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/orders', orderRoutes);
-app.use('/api/analytics', analyticsRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/customers', customerRoutes);
-app.use('/api/reviews', reviewRoutes);
-app.use('/api/coupons', couponRoutes);
+app.use(
+  '/api/auth',
+  authRoutes
+);
+
+app.use(
+  '/api/products',
+  productRoutes
+);
+
+app.use(
+  '/api/orders',
+  orderRoutes
+);
+
+app.use(
+  '/api/analytics',
+  analyticsRoutes
+);
+
+app.use(
+  '/api/upload',
+  uploadRoutes
+);
+
+app.use(
+  '/api/customers',
+  customerRoutes
+);
+
+app.use(
+  '/api/reviews',
+  reviewRoutes
+);
+
+app.use(
+  '/api/coupons',
+  couponRoutes
+);
 
 // =====================================================
 // HEALTH CHECK
 // =====================================================
 
-app.get('/api/health', (_req, res) => {
-  res.json({
-    success: true,
-    message: 'HangOver API is running',
-  });
-});
+app.get(
+  '/api/health',
+  (_req, res) => {
+    res.json({
+      success: true,
+      message:
+        'HangOver API is running',
+    });
+  }
+);
 
 // =====================================================
 // 404 HANDLER
 // =====================================================
 
-app.use((_req, res) => {
-  res.status(404).json({
-    success: false,
-    message: 'API route not found',
-  });
-});
+app.use(
+  (
+    _req,
+    res
+  ) => {
+    res.status(404).json({
+      success: false,
+      message:
+        'API route not found',
+    });
+  }
+);
 
 // =====================================================
 // ERROR HANDLER
@@ -162,18 +281,29 @@ app.use(
     res: express.Response,
     _next: express.NextFunction
   ) => {
-    console.error('[Server Error]:', error);
+    console.error(
+      '[Server Error]:',
+      error
+    );
 
-    if (error?.message?.startsWith('CORS blocked origin:')) {
+    if (
+      error?.message?.startsWith(
+        'CORS blocked origin:'
+      )
+    ) {
       return res.status(403).json({
         success: false,
-        message: error.message,
+        message:
+          error.message,
       });
     }
 
     return res.status(500).json({
       success: false,
-      message: 'Internal server error',
+      message:
+        error instanceof Error
+          ? error.message
+          : 'Internal server error',
     });
   }
 );
@@ -182,24 +312,57 @@ app.use(
 // START SERVER
 // =====================================================
 
-const startServer = async () => {
-  try {
-    await connectDB();
+const startServer =
+  async () => {
+    try {
+      await connectDB();
 
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log('======================================');
-      console.log(`Server running on port ${PORT}`);
-      console.log(`Health: /api/health`);
-      console.log('======================================');
-    });
-  } catch (error) {
-    console.error('======================================');
-    console.error('[Server] Failed to start');
-    console.error(error);
-    console.error('======================================');
+      app.listen(
+        PORT,
+        '0.0.0.0',
+        () => {
+          console.log(
+            '======================================'
+          );
 
-    process.exit(1);
-  }
-};
+          console.log(
+            `Server running on port ${PORT}`
+          );
+
+          console.log(
+            'Health: /api/health'
+          );
+
+          console.log(
+            'Images: /uploads/products/:filename'
+          );
+
+          console.log(
+            'Storage: MongoDB GridFS'
+          );
+
+          console.log(
+            '======================================'
+          );
+        }
+      );
+    } catch (error) {
+      console.error(
+        '======================================'
+      );
+
+      console.error(
+        '[Server] Failed to start'
+      );
+
+      console.error(error);
+
+      console.error(
+        '======================================'
+      );
+
+      process.exit(1);
+    }
+  };
 
 startServer();

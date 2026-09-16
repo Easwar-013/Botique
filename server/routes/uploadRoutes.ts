@@ -6,7 +6,7 @@ import {
 
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
+import mongoose from 'mongoose';
 
 import {
   protect,
@@ -17,67 +17,53 @@ const router = Router();
 
 const MAX_FILE_SIZE = 100 * 1024;
 
-const uploadDirectory = path.join(
-  process.cwd(),
-  'uploads',
-  'products'
-);
+/*
+ * =====================================================
+ * GRIDFS
+ * =====================================================
+ */
 
-// Make sure the folder exists
-if (!fs.existsSync(uploadDirectory)) {
-  fs.mkdirSync(uploadDirectory, {
-    recursive: true,
-  });
-}
+const GRIDFS_BUCKET_NAME =
+  'productImages';
+
+const getGridFSBucket = () => {
+  const db =
+    mongoose.connection.db;
+
+  if (!db) {
+    throw new Error(
+      'MongoDB connection is not ready.'
+    );
+  }
+
+  return new mongoose.mongo.GridFSBucket(
+    db,
+    {
+      bucketName:
+        GRIDFS_BUCKET_NAME,
+    }
+  );
+};
+
+/*
+ * =====================================================
+ * MULTER MEMORY STORAGE
+ *
+ * Images are kept in memory temporarily,
+ * then uploaded directly to MongoDB GridFS.
+ * No local filesystem is used.
+ * =====================================================
+ */
 
 const storage =
-  multer.diskStorage({
-    destination: (
-      _req,
-      _file,
-      callback
-    ) => {
-      callback(
-        null,
-        uploadDirectory
-      );
-    },
-
-    filename: (
-      _req,
-      file,
-      callback
-    ) => {
-      const extension =
-        path.extname(file.originalname);
-
-      const baseName =
-        path
-          .basename(
-            file.originalname,
-            extension
-          )
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-|-$/g, '');
-
-      const uniqueName =
-        `${baseName || 'product'}-${Date.now()}-${Math.round(
-          Math.random() * 100000
-        )}.webp`;
-
-      callback(
-        null,
-        uniqueName
-      );
-    },
-  });
+  multer.memoryStorage();
 
 const upload = multer({
   storage,
 
   limits: {
-    fileSize: MAX_FILE_SIZE,
+    fileSize:
+      MAX_FILE_SIZE,
   },
 
   fileFilter: (
@@ -96,7 +82,11 @@ const upload = multer({
         file.mimetype
       )
     ) {
-      callback(null, true);
+      callback(
+        null,
+        true
+      );
+
       return;
     }
 
@@ -108,9 +98,117 @@ const upload = multer({
   },
 });
 
-/**
- * POST /api/upload/image
+/*
+ * =====================================================
+ * CREATE GRIDFS FILENAME
+ * =====================================================
  */
+
+const createFileName = (
+  originalName: string
+): string => {
+  const extension =
+    path.extname(
+      originalName
+    );
+
+  const baseName =
+    path
+      .basename(
+        originalName,
+        extension
+      )
+      .toLowerCase()
+      .replace(
+        /[^a-z0-9]+/g,
+        '-'
+      )
+      .replace(
+        /^-|-$/g,
+        '');
+
+  const finalExtension =
+    extension
+      ? extension.toLowerCase()
+      : '.webp';
+
+  return `${
+    baseName ||
+    'product'
+  }-${Date.now()}-${Math.round(
+    Math.random() * 100000
+  )}${finalExtension}`;
+};
+
+/*
+ * =====================================================
+ * UPLOAD BUFFER TO GRIDFS
+ * =====================================================
+ */
+
+const uploadBufferToGridFS = (
+  buffer: Buffer,
+  filename: string,
+  contentType: string,
+  originalName: string
+): Promise<string> => {
+  return new Promise(
+    (
+      resolve,
+      reject
+    ) => {
+      try {
+        const bucket =
+          getGridFSBucket();
+
+        const uploadStream =
+          bucket.openUploadStream(
+            filename,
+            {
+              metadata: {
+                contentType,
+                originalName,
+              },
+            }
+          );
+
+        uploadStream.on(
+          'error',
+          (error) => {
+            reject(error);
+          }
+        );
+
+        uploadStream.on(
+          'finish',
+          () => {
+            resolve(
+              filename
+            );
+          }
+        );
+
+        uploadStream.end(
+          buffer
+        );
+      } catch (error) {
+        reject(error);
+      }
+    }
+  );
+};
+
+/*
+ * =====================================================
+ * POST /api/upload/image
+ *
+ * Admin only
+ *
+ * Stores the image directly in
+ * MongoDB GridFS.
+ * =====================================================
+ */
+
 router.post(
   '/image',
   protect,
@@ -136,15 +234,6 @@ router.post(
         req.file.size >
         MAX_FILE_SIZE
       ) {
-        // Delete oversized file
-        try {
-          fs.unlinkSync(
-            req.file.path
-          );
-        } catch {
-          // Ignore cleanup error
-        }
-
         res.status(400).json({
           success: false,
           message:
@@ -155,13 +244,31 @@ router.post(
       }
 
       /*
-       * Files are served publicly from /uploads.
+       * Generate a unique filename.
+       */
+      const filename =
+        createFileName(
+          req.file.originalname
+        );
+
+      /*
+       * Store image in GridFS.
+       */
+      await uploadBufferToGridFS(
+        req.file.buffer,
+        filename,
+        req.file.mimetype,
+        req.file.originalname
+      );
+
+      /*
+       * IMPORTANT:
        *
-       * Example:
-       * /uploads/products/shirt-12345.webp
+       * Keep the same URL structure
+       * your frontend already expects.
        */
       const imageUrl =
-        `/uploads/products/${req.file.filename}`;
+        `/uploads/products/${filename}`;
 
       res.status(200).json({
         success: true,
@@ -170,7 +277,7 @@ router.post(
           url: imageUrl,
 
           publicId:
-            req.file.filename,
+            filename,
 
           isPrimary: false,
         },
@@ -180,17 +287,6 @@ router.post(
         'Image upload error:',
         error
       );
-
-      // Cleanup if a file was created
-      if (req.file?.path) {
-        try {
-          fs.unlinkSync(
-            req.file.path
-          );
-        } catch {
-          // Ignore cleanup error
-        }
-      }
 
       res.status(500).json({
         success: false,
